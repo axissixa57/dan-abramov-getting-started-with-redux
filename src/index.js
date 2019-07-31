@@ -1,12 +1,258 @@
-import React from 'react';
+import React, { Component } from 'react';
 import ReactDOM from 'react-dom';
+import { createStore, combineReducers } from 'redux';
+import { Provider, connect } from 'react-redux';
 import './index.css';
 import App from './App';
 import * as serviceWorker from './serviceWorker';
 
-ReactDOM.render(<App />, document.getElementById('root'));
+// ========================================
+// ReactDOM.render(<App />, document.getElementById('root'));
 
 // If you want your app to work offline and load faster, you can change
 // unregister() to register() below. Note this comes with some pitfalls.
 // Learn more about service workers: https://bit.ly/CRA-PWA
 serviceWorker.unregister();
+// ========================================
+const todo = (state, action) => {
+    switch (action.type) {
+        case 'ADD_TODO':
+            return {
+                id: action.id,
+                text: action.text,
+                completed: false
+            };
+        case 'TOGGLE_TODO':
+            if (state.id !== action.id) {
+                return state;
+            }
+            return {
+                ...state,
+                completed: !state.completed
+            };
+        default:
+            return state;
+    }
+}
+
+const todos = (state = [], action) => {
+    switch (action.type) {
+        case 'ADD_TODO':
+            return [
+                ...state,
+                todo(undefined, action)
+            ]
+        case 'TOGGLE_TODO':
+            return state.map(t => todo(t, action))
+        default:
+            return state;
+    }
+};
+
+const Todo = ({
+    onClick,
+    completed,
+    text
+}) => (
+        <li onClick={onClick}
+            style={{
+                textDecoration: completed ? 'line-through' : 'none'
+            }}
+        >
+            {text}
+        </li>
+    );
+
+const TodoList = ({
+    todos,
+    onTodoClick
+}) => (
+        <ul>
+            {todos.map(todo =>
+                <Todo
+                    key={todo.id}
+                    {...todo}
+                    onClick={() => onTodoClick(todo.id)}
+                />
+            )}
+        </ul>
+    );
+
+const AddToDo = () => {
+    let input;
+
+    return (
+        // компоненту нужен single-root element - поэтому добавляется div 
+        <div>
+            <input ref={node => {
+                input = node;
+            }} />
+            <button onClick={() => {
+                store.dispatch({
+                    type: 'ADD_TODO',
+                    id: nextTodoId++,
+                    text: input.value
+                })
+                input.value = '';
+            }}>
+                Add Todo
+            </button>
+        </div>
+    );
+};
+
+const visibilityFilter = (
+    state = 'SHOW_ALL',
+    action
+) => {
+    switch (action.type) {
+        case 'SET_VISIBILITY_FILTER':
+            return action.filter;
+        default:
+            return state;
+    }
+}
+
+const Link = ({
+    active,
+    children,
+    onClick
+}) => {
+    if (active) {
+        return <span>{children}</span>
+    }
+    return (
+        // eslint-disable-next-line jsx-a11y/anchor-is-valid
+        <a href='#'
+            onClick={e => {
+                e.preventDefault();
+                onClick();
+            }}
+        >
+            {children}
+        </a>
+    );
+};
+
+class FilterLink extends Component {
+    // после ренеринга компонента срабатывает метод:
+    componentDidMount() {
+        // переменная нужна чтобы отписать от обработчика в store(из массива listeners)
+        this.unsubscribe = store.subscribe(() => { // когда сработает dispatch, тогда и сработает этот метод(т.к он находится в store)
+            // приведёт к выполнению метода render() в компоненте
+            this.forceUpdate();
+        })
+    }
+
+    // вызывается перед удалением компонента из DOM
+    componentWillUnmount() {
+        this.unsubscribe();
+    }
+
+    render() {
+        const props = this.props;
+        const state = store.getState();
+
+        return (
+            <Link
+                active={
+                    props.filter ===
+                    state.visibilityFilter
+                }
+                onClick={() => store.dispatch({
+                    type: 'SET_VISIBILITY_FILTER',
+                    filter: props.filter
+                })}
+            >
+                {props.children}
+            </Link>
+        );
+    }
+}
+
+const Footer = () => (
+    <p>
+        Show:
+            {' '}
+        <FilterLink filter='SHOW_ALL'>All</FilterLink>
+        {', '}
+        <FilterLink filter='SHOW_ACTIVE'>Active</FilterLink>
+        {', '}
+        <FilterLink filter='SHOW_COMPLETED'>Completed</FilterLink>
+    </p>
+);
+
+const getVisibleTodos = (
+    todos,
+    filter
+) => {
+    // eslint-disable-next-line default-case
+    switch (filter) {
+        case 'SHOW_ALL':
+            return todos;
+        case 'SHOW_COMPLETED':
+            return todos.filter(
+                t => t.completed
+            );
+        case 'SHOW_ACTIVE':
+            return todos.filter(
+                t => !t.completed
+            );
+    }
+}
+
+class VisibleTodoList extends Component {
+    componentDidMount() {
+        // переменная нужна чтобы отписать от обработчика в store
+        this.unsubscribe = store.subscribe(() => {
+            this.forceUpdate();
+        })
+    }
+
+    componentWillUnmount() {
+        this.unsubscribe();
+    }
+
+    render() {
+        const props = this.props;
+        const state = store.getState();
+
+        return (
+            <TodoList
+                todos={
+                    getVisibleTodos(state.todos, state.visibilityFilter)
+                }
+                onTodoClick={id =>
+                    store.dispatch({
+                        type: 'TOGGLE_TODO',
+                        id
+                    })
+                }
+            />
+        )
+    }
+}
+
+let nextTodoId = 0;
+
+const TodoApp = () => {
+    return (
+        <div>
+            <AddToDo />
+            <VisibleTodoList />
+            <Footer />
+        </div>
+    );
+}
+
+const todoApp = combineReducers({
+    todos,
+    visibilityFilter
+});
+
+const store = createStore(todoApp);
+
+ReactDOM.render(
+    <TodoApp />,
+    document.getElementById('root')
+);
